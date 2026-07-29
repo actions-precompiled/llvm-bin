@@ -1,9 +1,5 @@
-github.com/actions-precompiled/foundation v0.0.0-20260729130728-48ee2f4b9ac8 h1:5fL6LNuosgZfTTJCdLRJ+VuE546HVGFaFRpgvpipGWc=
-github.com/actions-precompiled/foundation v0.0.0-20260729130728-48ee2f4b9ac8/go.mod h1:NboZnCxTs20vY763nm//sshZfAZHf5wyzhoPSU2y6/Q=
-github.com/actions-precompiled/foundation v0.0.0-20260729134751-335e78e7887d h1:U4HWTF9rbuEjQse9RwD0t4y3PmMkcYPAJZYR7oufqMk=
-github.com/actions-precompiled/foundation v0.0.0-20260729134751-335e78e7887d/go.mod h1:NboZnCxTs20vY763nm//sshZfAZHf5wyzhoPSU2y6/Q=
-github.com/actions-precompiled/foundation v0.0.0-20260729134844-fd34ffbfa1d1 h1:ZY1FQ6vL4skKM5uWowsFiYoKKaLeIkGC3BIGgC0f+JE=
-github.com/actions-precompiled/foundation v0.0.0-20260729134844-fd34ffbfa1d1/go.mod h1:NboZnCxTs20vY763nm//sshZfAZHf5wyzhoPSU2y6/Q=
+github.com/actions-precompiled/foundation v0.0.0-20260729140446-74701c132989 h1:gPvL8uMI3cmBCJDZaFQpXRuV1XmPtJqLPjNL+XslZfE=
+github.com/actions-precompiled/foundation v0.0.0-20260729140446-74701c132989/go.mod h1:NboZnCxTs20vY763nm//sshZfAZHf5wyzhoPSU2y6/Q=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=

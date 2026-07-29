@@ -52,8 +52,11 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 		"-B", build,
 		"-DCMAKE_BUILD_TYPE=Release",
 		"-DCMAKE_INSTALL_PREFIX=" + prefix,
-		`-DCMAKE_INSTALL_RPATH=\$ORIGIN/../lib`,
+		// Passed via exec (no shell): literal $ORIGIN for the dynamic linker.
+		"-DCMAKE_INSTALL_RPATH=$ORIGIN/../lib",
 		"-DCMAKE_BUILD_RPATH_USE_ORIGIN=ON",
+		"-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
+		"-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF",
 		"-DLLVM_ENABLE_PROJECTS=" + projects,
 		"-DLLVM_ENABLE_RUNTIMES=" + runtimes,
 		"-DLLVM_TARGETS_TO_BUILD=" + targets,
@@ -92,6 +95,16 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 
 	if err := ensureClangSymlinks(deps, prefix); err != nil {
 		return err
+	}
+	// Belt-and-suspenders: force $ORIGIN rpaths so the tree is self-contained
+	// without LD_LIBRARY_PATH (CMake alone is not always enough for every tool).
+	if err := foundation.PatchLinuxOriginRPath(ctx, deps, prefix); err != nil {
+		return fmt.Errorf("relocatable rpath: %w", err)
+	}
+	if err := foundation.CheckLinuxRelocatable(prefix, foundation.RelocatableOpts{
+		RequiredBins: []string{"clang"},
+	}); err != nil {
+		return fmt.Errorf("post-install relocatable check: %w", err)
 	}
 
 	info := fmt.Sprintf(`package=%s
