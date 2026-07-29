@@ -89,7 +89,7 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 		return fmt.Errorf("%w: %q", ErrHelloOutput, out)
 	}
 
-	for _, util := range []string{"clang++", "clang-format", "clang-tidy", "clangd", "lld", "llvm-ar", "llvm-config", "lldb"} {
+	for _, util := range []string{"clang++", "clang-format", "clang-tidy", "clangd", "ld.lld", "llvm-ar", "llvm-config", "lldb"} {
 		p := filepath.Join(root, "bin", util)
 		if _, err := deps.FS.Stat(p); err != nil {
 			deps.Logf("WARN missing optional util: %s", util)
