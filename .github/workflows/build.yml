@@ -68,6 +68,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+      # MSVC env for windows-* matrix rows (MinGW half-builds lack CRT headers for builtins).
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: ${{ startsWith(matrix.target, 'windows-') }}
+        with:
+          arch: ${{ contains(matrix.target, 'arm') && 'arm64' || 'x64' }}
       - name: go run . build
         env:
           APC_TARGETS: ${{ matrix.target }}

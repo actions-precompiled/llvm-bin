@@ -13,8 +13,10 @@ import (
 )
 
 func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta, req foundation.BuildRequest) error {
-	if err := enterVsDevShell(ctx, deps, req.Target); err != nil {
-		deps.Logf("VsDevShell: %v (continuing if cl is already on PATH)", err)
+	// Require MSVC (cl). MinGW hosts produce x86_64-w64-windows-gnu and break
+	// compiler-rt i386 builtins (stdlib.h not found). GHA: ilammy/msvc-dev-cmd.
+	if err := requireMSVC(ctx, deps); err != nil {
+		return err
 	}
 
 	archiveSuffix := req.Target
@@ -70,6 +72,8 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 		"-DCLANG_INCLUDE_TESTS=OFF",
 		"-DCLANG_DEFAULT_LINKER=lld",
 		"-DLLVM_PARALLEL_LINK_JOBS=" + linkJobs,
+		// Only the host target's compiler-rt; avoid i386 builtins without 32-bit SDK.
+		"-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON",
 	}
 	if err := deps.Runner.Run(ctx, "cmake", cmakeArgs...); err != nil {
 		return fmt.Errorf("cmake configure: %w", err)
@@ -106,15 +110,13 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	return nil
 }
 
-func enterVsDevShell(ctx context.Context, deps foundation.Deps, target string) error {
-	// Best-effort: invoke VsDevCmd via cmd and re-run is hard in one process.
-	// Rely on GHA MSVC or user environment; PrepHost already installed cmake/ninja.
-	// Try to locate vswhere and print hint.
-	_, err := deps.Runner.Output(ctx, "where", "cl")
-	if err == nil {
-		return nil
+func requireMSVC(ctx context.Context, deps foundation.Deps) error {
+	out, err := deps.Runner.Output(ctx, "where", "cl")
+	if err != nil {
+		return fmt.Errorf("%w (GHA: ensure msvc-dev-cmd before build)", ErrMSVCNotOnPATH)
 	}
-	return fmt.Errorf("%w", ErrMSVCNotOnPATH)
+	deps.Logf("MSVC cl: %s", firstLine(out))
+	return nil
 }
 
 func splatXwin(ctx context.Context, deps foundation.Deps, prefix, target string) error {
@@ -137,4 +139,12 @@ func splatXwin(ctx context.Context, deps foundation.Deps, prefix, target string)
 
 func osTemp() string {
 	return filepath.Join(".", "tmp-llvm-build")
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return s
 }
