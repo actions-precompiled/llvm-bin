@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -33,7 +34,9 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 	stage := filepath.Join(work, "stage")
 	prefix := filepath.Join(stage, meta.Name)
 
-	_ = deps.FS.RemoveAll(work)
+	if err := deps.FS.RemoveAll(work); err != nil {
+		deps.Logf("remove %s: %v", work, err)
+	}
 	for _, d := range []string{src, build, prefix, req.OutDir} {
 		if err := deps.FS.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -90,10 +93,14 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 		return fmt.Errorf("cmake install: %w", err)
 	}
 
-	_ = deps.FS.RemoveAll(build)
-	_ = deps.FS.RemoveAll(src)
+	if err := deps.FS.RemoveAll(build); err != nil {
+		deps.Logf("remove %s: %v", build, err)
+	}
+	if err := deps.FS.RemoveAll(src); err != nil {
+		deps.Logf("remove %s: %v", src, err)
+	}
 
-	if err := ensureClangSymlinks(deps, prefix); err != nil {
+	if err := ensureClangSymlinks(ctx, deps, prefix); err != nil {
 		return err
 	}
 	// Belt-and-suspenders: force $ORIGIN rpaths so the tree is self-contained
@@ -139,16 +146,22 @@ func linuxArchiveSuffix(target string) (string, error) {
 	case foundation.TargetLinuxAArch64, "linux-arm64":
 		return foundation.TargetLinuxAArch64, nil
 	default:
-		return "", fmt.Errorf("unsupported linux target %q", target)
+		return "", fmt.Errorf("%w: %q", ErrUnsupportedTarget, target)
 	}
 }
 
 func cloneUpstream(ctx context.Context, deps foundation.Deps, upstream, versionRaw, src string) (ref, artifact, sha string, err error) {
 	tryClone := func(branch string) error {
-		_ = deps.FS.RemoveAll(src)
-		_ = deps.FS.MkdirAll(src, 0o755)
+		if err := deps.FS.RemoveAll(src); err != nil {
+		deps.Logf("remove %s: %v", src, err)
+	}
+		if err := deps.FS.MkdirAll(src, 0o755); err != nil {
+			return err
+		}
 		// git clone into src - need empty or clone creates dir
-		_ = deps.FS.RemoveAll(src)
+		if err := deps.FS.RemoveAll(src); err != nil {
+		deps.Logf("remove %s: %v", src, err)
+	}
 		return deps.Runner.Run(ctx, "git", "clone", "--depth", "1", "--branch", branch, upstream, src)
 	}
 
@@ -158,7 +171,7 @@ func cloneUpstream(ctx context.Context, deps foundation.Deps, upstream, versionR
 		if err := tryClone("main"); err != nil {
 			ref = "master"
 			if err2 := tryClone("master"); err2 != nil {
-				return "", "", "", fmt.Errorf("clone trunk: %v / %v", err, err2)
+				return "", "", "", fmt.Errorf("%w: %w", ErrCloneTrunk, errors.Join(err, err2))
 			}
 		}
 	default:
@@ -190,7 +203,7 @@ func cloneUpstream(ctx context.Context, deps foundation.Deps, upstream, versionR
 	return ref, artifact, sha, nil
 }
 
-func ensureClangSymlinks(deps foundation.Deps, prefix string) error {
+func ensureClangSymlinks(ctx context.Context, deps foundation.Deps, prefix string) error {
 	bin := filepath.Join(prefix, "bin")
 	clang := filepath.Join(bin, "clang")
 	if _, err := deps.FS.Stat(clang); err != nil {
@@ -198,13 +211,15 @@ func ensureClangSymlinks(deps foundation.Deps, prefix string) error {
 		entries, _ := deps.FS.ReadDir(bin)
 		for _, e := range entries {
 			if strings.HasPrefix(e.Name(), "clang-") && !strings.Contains(e.Name(), ".") {
-				_ = deps.Runner.Run(context.Background(), "ln", "-sfn", e.Name(), clang)
+				if err := deps.Runner.Run(ctx, "ln", "-sfn", e.Name(), clang); err != nil {
+					return fmt.Errorf("symlink clang: %w", err)
+				}
 				break
 			}
 		}
 	}
 	if _, err := deps.FS.Stat(clang); err != nil {
-		return fmt.Errorf("clang missing after install under %s", bin)
+		return fmt.Errorf("%w under %s", ErrClangMissingInstall, bin)
 	}
 	return nil
 }

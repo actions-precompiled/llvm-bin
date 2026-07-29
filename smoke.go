@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,7 @@ import (
 
 func smokeLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, req foundation.SmokeRequest) error {
 	if len(req.Tarballs) == 0 {
-		return fmt.Errorf("smoke: no tarballs")
+		return fmt.Errorf("%w", ErrSmokeNoTarballs)
 	}
 	for _, tb := range req.Tarballs {
 		if err := smokeLinuxTarball(ctx, deps, meta, tb); err != nil {
@@ -27,7 +28,11 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 	if err != nil {
 		return err
 	}
-	defer func() { _ = deps.FS.RemoveAll(tmp) }()
+	defer func() {
+		if err := deps.FS.RemoveAll(tmp); err != nil {
+			deps.Logf("smoke cleanup: %v", err)
+		}
+	}()
 
 	if err := deps.Runner.Run(ctx, "tar", "-xzf", tarball, "-C", tmp); err != nil {
 		return fmt.Errorf("extract: %w", err)
@@ -78,7 +83,7 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 	if out, err := run(bin); err != nil {
 		return fmt.Errorf("run hello: %w\n%s", err, out)
 	} else if !strings.Contains(out, "hi") {
-		return fmt.Errorf("hello output unexpected: %q", out)
+		return fmt.Errorf("%w: %q", ErrHelloOutput, out)
 	}
 
 	for _, util := range []string{"clang++", "clang-format", "clang-tidy", "clangd", "lld", "llvm-ar", "llvm-config", "lldb"} {
@@ -89,7 +94,7 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 		}
 		if out, err := run(p, "--version"); err != nil {
 			if out2, err2 := run(p, "-version"); err2 != nil {
-				return fmt.Errorf("%s version failed without LD_LIBRARY_PATH: %v / %v", util, err, err2)
+				return fmt.Errorf("%w (%s): %w", ErrUtilVersion, util, errors.Join(err, err2))
 			} else {
 				deps.Logf("ok %s: %s", util, firstLines(out2, 1))
 			}
@@ -104,7 +109,7 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 
 func smokeWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta, req foundation.SmokeRequest) error {
 	if len(req.Tarballs) == 0 {
-		return fmt.Errorf("smoke: no tarballs")
+		return fmt.Errorf("%w", ErrSmokeNoTarballs)
 	}
 	for _, tb := range req.Tarballs {
 		if err := smokeWindowsTarball(ctx, deps, meta, tb); err != nil {
@@ -120,7 +125,11 @@ func smokeWindowsTarball(ctx context.Context, deps foundation.Deps, meta foundat
 	if err != nil {
 		return err
 	}
-	defer func() { _ = deps.FS.RemoveAll(tmp) }()
+	defer func() {
+		if err := deps.FS.RemoveAll(tmp); err != nil {
+			deps.Logf("smoke cleanup: %v", err)
+		}
+	}()
 
 	if err := deps.Runner.Run(ctx, "tar", "-xzf", tarball, "-C", tmp); err != nil {
 		return fmt.Errorf("extract: %w", err)
@@ -130,7 +139,7 @@ func smokeWindowsTarball(ctx context.Context, deps foundation.Deps, meta foundat
 	if _, err := deps.FS.Stat(clang); err != nil {
 		clang = filepath.Join(root, "bin", "clang")
 		if _, err2 := deps.FS.Stat(clang); err2 != nil {
-			return fmt.Errorf("missing bin/clang: %v / %v", err, err2)
+			return fmt.Errorf("%w: %w", ErrMissingClang, errors.Join(err, err2))
 		}
 	}
 
@@ -156,7 +165,9 @@ func smokeWindowsTarball(ctx context.Context, deps foundation.Deps, meta foundat
 	}
 
 	hello := filepath.Join(tmp, "hello.c")
-	_ = deps.FS.WriteFile(hello, []byte("#include <stdio.h>\nint main(void){puts(\"hi\");return 0;}\n"), 0o644)
+	if err := deps.FS.WriteFile(hello, []byte("#include <stdio.h>\nint main(void){puts(\"hi\");return 0;}\n"), 0o644); err != nil {
+		return err
+	}
 	outExe := filepath.Join(tmp, "hello.exe")
 
 	var args []string

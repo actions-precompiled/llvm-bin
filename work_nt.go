@@ -38,7 +38,9 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	stage := filepath.Join(work, "stage")
 	prefix := filepath.Join(stage, meta.Name)
 
-	_ = deps.FS.RemoveAll(work)
+	if err := deps.FS.RemoveAll(work); err != nil {
+		deps.Logf("remove %s: %v", work, err)
+	}
 	for _, d := range []string{src, build, prefix, req.OutDir} {
 		if err := deps.FS.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -80,8 +82,12 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	if err := deps.Runner.Run(ctx, "cmake", "--install", build); err != nil {
 		return fmt.Errorf("cmake install: %w", err)
 	}
-	_ = deps.FS.RemoveAll(build)
-	_ = deps.FS.RemoveAll(src)
+	if err := deps.FS.RemoveAll(build); err != nil {
+		deps.Logf("remove %s: %v", build, err)
+	}
+	if err := deps.FS.RemoveAll(src); err != nil {
+		deps.Logf("remove %s: %v", src, err)
+	}
 
 	// optional xwin
 	if deps.Env.Get("SKIP_XWIN") != "1" {
@@ -93,7 +99,9 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	info := fmt.Sprintf("package=%s\nversion=%s\nupstream_ref=%s\nupstream_sha=%s\nbuild_target=%s\nprojects=%s\nruntimes=%s\n",
 		meta.Name, artifactVersion, ref, sha, req.Target, projects, runtimes)
 	info += "built_at=" + time.Now().UTC().Format(time.RFC3339) + "\n"
-	_ = deps.FS.WriteFile(filepath.Join(prefix, "BUILDINFO.txt"), []byte(info), 0o644)
+	if err := deps.FS.WriteFile(filepath.Join(prefix, "BUILDINFO.txt"), []byte(info), 0o644); err != nil {
+		return err
+	}
 
 	archive := filepath.Join(req.OutDir, foundation.ArtifactName(meta.Name, artifactVersion, archiveSuffix))
 	// Windows tar
@@ -112,7 +120,7 @@ func enterVsDevShell(ctx context.Context, deps foundation.Deps, target string) e
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("cl.exe not on PATH; run from VS dev shell or GHA msvc-dev-cmd")
+	return fmt.Errorf("%w", ErrMSVCNotOnPATH)
 }
 
 func splatXwin(ctx context.Context, deps foundation.Deps, prefix, target string) error {
