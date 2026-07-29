@@ -162,12 +162,7 @@ jobs:
           if [[ "$RECREATE" == "true" ]]; then
             gh release delete "$VERSION" --yes --cleanup-tag || true
           fi
-          notes="Relocatable LLVM kitchen-sink (${VERSION}).
-
-Linux: clang toolchain + tools-extra + lld + lldb + mlir + polly + bolt + openmp + runtimes.
-Windows: same tools + xwin MSVC/UCRT sysroot so consumers compile without cl.exe or MinGW.
-
-Built by actions-precompiled/llvm (tech demo; trunk babysit welcome)."
+          notes="$(printf '%s\n'             "Relocatable LLVM kitchen-sink (${VERSION})."             ""             "Linux: clang + tools-extra + lld + lldb + mlir + polly + bolt + openmp + runtimes."             "Windows: tools + xwin MSVC/UCRT sysroot (no cl.exe or MinGW for consumers)."             ""             "Built by actions-precompiled/llvm tech demo.")"
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "release exists; uploading assets"
           else
