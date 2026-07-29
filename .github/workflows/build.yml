@@ -1,0 +1,178 @@
+name: Build
+
+# Tech demo: one version per run, kitchen-sink LLVM, GitHub pays compute.
+# push/PR → trunk artifacts only. workflow_dispatch → choose ref + optional publish.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'trunk | llvmorg-X.Y.Z | git ref'
+        required: true
+        default: 'trunk'
+        type: string
+      publish:
+        description: 'Create GitHub Release from artifacts'
+        required: false
+        type: boolean
+        default: false
+      recreate:
+        description: 'Delete existing release first'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: llvm-build-${{ github.event.inputs.version || github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+      recreate: ${{ steps.plan.outputs.recreate }}
+    steps:
+      - id: plan
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_PUBLISH: ${{ github.event.inputs.publish }}
+          INPUT_RECREATE: ${{ github.event.inputs.recreate }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION:-trunk}"
+          publish=false
+          recreate=false
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            case "${INPUT_PUBLISH:-false}" in true|1|yes) publish=true ;; esac
+            case "${INPUT_RECREATE:-false}" in true|1|yes) recreate=true ;; esac
+          fi
+          {
+            echo "version=$version"
+            echo "publish=$publish"
+            echo "recreate=$recreate"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## LLVM build plan"
+            echo ""
+            echo "- Ref: \`$version\`"
+            echo "- Publish: **$publish**"
+            echo "- Kitchen sink: clang, tools-extra, lld, lldb, mlir, polly, bolt, openmp + runtimes"
+            echo "- Windows: clang+lld + xwin sysroot (no cl/mingw for consumers)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-linux:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-latest
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker system prune -af || true
+          df -h
+
+      - name: Build (docker) + smoke
+        env:
+          APC_TARGETS: ${{ matrix.target }}
+          APC_IMAGE_TAG: ci
+          APC_PUBLISH: "0"
+          LLVM_PARALLEL_LINK_JOBS: "2"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise exec -- go run . "${{ needs.plan.outputs.version }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-${{ needs.plan.outputs.version }}-${{ matrix.target }}
+          path: target/${{ matrix.target }}/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows:
+    needs: plan
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - name: Install Ninja
+        run: choco install ninja -y
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build (native) + smoke
+        env:
+          APC_TARGETS: windows-amd64
+          APC_SKIP_IMAGE_BUILD: "1"
+          APC_PUBLISH: "0"
+          LLVM_PARALLEL_LINK_JOBS: "1"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise exec -- go run . "${{ needs.plan.outputs.version }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-${{ needs.plan.outputs.version }}-windows-amd64
+          path: target/windows-amd64/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [plan, build-linux, build-windows]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          RECREATE: ${{ needs.plan.outputs.recreate }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find artifacts -type f -name '*.tar.gz' | sort)
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo "no assets" >&2
+            exit 1
+          fi
+          if [[ "$RECREATE" == "true" ]]; then
+            gh release delete "$VERSION" --yes --cleanup-tag || true
+          fi
+          notes="Relocatable LLVM kitchen-sink (${VERSION}).
+
+Linux: clang toolchain + tools-extra + lld + lldb + mlir + polly + bolt + openmp + runtimes.
+Windows: same tools + xwin MSVC/UCRT sysroot so consumers compile without cl.exe or MinGW.
+
+Built by actions-precompiled/llvm (tech demo; trunk babysit welcome)."
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "release exists; uploading assets"
+          else
+            gh release create "$VERSION" --title "llvm ${VERSION}" --notes "$notes" --latest=false
+          fi
+          for a in "${assets[@]}"; do
+            gh release upload "$VERSION" --clobber "$a"
+          done
