@@ -51,7 +51,7 @@ func defaultHostTarget() string {
 
 func (p llvmPackage) Build(ctx context.Context, deps foundation.Deps, req foundation.BuildRequest) error {
 	meta := p.Meta().Normalize()
-	if isWindowsTarget(req.Target) {
+	if foundation.IsWindowsTarget(req.Target) {
 		return buildWindowsNative(ctx, deps, meta, req)
 	}
 	return buildLinuxDocker(ctx, deps, meta, req)
@@ -103,14 +103,10 @@ func buildLinuxDocker(ctx context.Context, deps foundation.Deps, meta foundation
 
 func (p llvmPackage) Smoke(ctx context.Context, deps foundation.Deps, req foundation.SmokeRequest) error {
 	meta := p.Meta().Normalize()
-	if isWindowsTarget(req.Target) {
+	if foundation.IsWindowsTarget(req.Target) {
 		return smokeWindows(ctx, deps, meta, req)
 	}
 	return smokeLinux(ctx, deps, meta, req)
-}
-
-func isWindowsTarget(target string) bool {
-	return strings.HasPrefix(target, "windows-")
 }
 
 func firstNonEmpty(vals ...string) string {

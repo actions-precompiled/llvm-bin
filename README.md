@@ -37,6 +37,12 @@ APC_TARGETS=linux-amd64 mise exec -- go run . trunk
 
 ## CI
 
+Thin matrix: checkout → mise → `go run . <version>` with `APC_TARGETS`.
+Host prep (disk free, choco cmake/ninja, VsDevCmd) is in the Go payload /
+`scripts/` via `runtime.GOOS`, not workflow `if:` branches.
+
+## CI details
+
 | Workflow | Role |
 |----------|------|
 | `Build` | push/PR → trunk; dispatch → any ref; optional publish |

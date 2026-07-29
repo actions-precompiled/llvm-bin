@@ -31,6 +31,36 @@ $Prefix = Join-Path $Stage $PackageName
 if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
 New-Item -ItemType Directory -Force -Path $Src, $Build, $Prefix, $OutputDir | Out-Null
 
+# Enter VS developer environment (no ilammy/msvc-dev-cmd in CI — Go owns host prep).
+function Enter-VsDevShell {
+  $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+  if (-not (Test-Path $vswhere)) {
+    Write-Warning "vswhere not found; assuming cl/link already on PATH"
+    return
+  }
+  $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+  if (-not $installPath) {
+    Write-Warning "VS C++ tools not found via vswhere"
+    return
+  }
+  $vsDevCmd = Join-Path $installPath "Common7\Tools\VsDevCmd.bat"
+  if (-not (Test-Path $vsDevCmd)) { throw "VsDevCmd.bat missing at $vsDevCmd" }
+  Write-Host "Loading VS env from $vsDevCmd"
+  # Import env vars from VsDevCmd into this process
+  $arch = if ($BuildTarget -eq "windows-arm64") { "arm64" } else { "x64" }
+  cmd /c "`"$vsDevCmd`" -arch=$arch -host_arch=x64 >nul 2>&1 && set" | ForEach-Object {
+    if ($_ -match '^(.*?)=(.*)$') {
+      [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+    }
+  }
+  if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
+    throw "cl.exe still not on PATH after VsDevCmd"
+  }
+  Write-Host "cl: $((Get-Command cl).Source)"
+}
+
+Enter-VsDevShell
+
 Write-Host "========================================="
 Write-Host "Building $PackageName $VersionRaw ($BuildTarget)"
 Write-Host "========================================="
