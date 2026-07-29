@@ -2,6 +2,7 @@ name: Build
 
 # Tech demo: one version per run, kitchen-sink LLVM, GitHub pays compute.
 # push/PR → trunk artifacts only. workflow_dispatch → choose ref + optional publish.
+# One matrix for all targets (linux docker + windows native).
 
 on:
   push:
@@ -66,11 +67,12 @@ jobs:
             echo ""
             echo "- Ref: \`$version\`"
             echo "- Publish: **$publish**"
+            echo "- Matrix: linux-amd64, linux-aarch64, windows-amd64"
             echo "- Kitchen sink: clang, tools-extra, lld, lldb, mlir, polly, bolt + runtimes (openmp via RUNTIMES)"
             echo "- Windows: clang+lld + xwin sysroot (no cl/mingw for consumers)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  build-linux:
+  build:
     needs: plan
     strategy:
       fail-fast: false
@@ -78,15 +80,22 @@ jobs:
         include:
           - target: linux-amd64
             runner: ubuntu-latest
+            family: linux
           - target: linux-aarch64
             runner: ubuntu-24.04-arm
+            family: linux
+          - target: windows-amd64
+            runner: windows-latest
+            family: windows
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
 
+      # --- linux-only prep ---
       - name: Free disk space
+        if: matrix.family == 'linux'
         run: |
           set -euo pipefail
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
@@ -94,12 +103,24 @@ jobs:
           sudo docker system prune -af || true
           df -h
 
-      - name: Build (docker) + smoke
+      # --- windows-only prep (bootstrap toolchain; consumer kit is cl/mingw-free) ---
+      - name: Install Ninja + modern CMake
+        if: matrix.family == 'windows'
+        run: |
+          choco install ninja cmake --version=3.31.6 -y --no-progress
+          cmake --version
+      - name: MSVC dev environment
+        if: matrix.family == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build + smoke
         env:
           APC_TARGETS: ${{ matrix.target }}
+          # Linux: build docker image. Windows: skip image, native pwsh script.
+          APC_SKIP_IMAGE_BUILD: ${{ matrix.family == 'windows' && '1' || '0' }}
           APC_IMAGE_TAG: ci
           APC_PUBLISH: "0"
-          LLVM_PARALLEL_LINK_JOBS: "2"
+          LLVM_PARALLEL_LINK_JOBS: ${{ matrix.family == 'windows' && '1' || '2' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: mise exec -- go run . "${{ needs.plan.outputs.version }}"
 
@@ -111,38 +132,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  build-windows:
-    needs: plan
-    runs-on: windows-latest
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
-      - name: Install Ninja + modern CMake
-        run: |
-          choco install ninja cmake --version=3.31.6 -y --no-progress
-          cmake --version
-      - uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Build (native) + smoke
-        env:
-          APC_TARGETS: windows-amd64
-          APC_SKIP_IMAGE_BUILD: "1"
-          APC_PUBLISH: "0"
-          LLVM_PARALLEL_LINK_JOBS: "1"
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mise exec -- go run . "${{ needs.plan.outputs.version }}"
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: llvm-${{ needs.plan.outputs.version }}-windows-amd64
-          path: target/windows-amd64/*.tar.gz
-          if-no-files-found: error
-          retention-days: 14
-
   publish:
-    needs: [plan, build-linux, build-windows]
+    needs: [plan, build]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -164,7 +155,13 @@ jobs:
           if [[ "$RECREATE" == "true" ]]; then
             gh release delete "$VERSION" --yes --cleanup-tag || true
           fi
-          notes="$(printf '%s\n'             "Relocatable LLVM kitchen-sink (${VERSION})."             ""             "Linux: clang + tools-extra + lld + lldb + mlir + polly + bolt + openmp + runtimes."             "Windows: tools + xwin MSVC/UCRT sysroot (no cl.exe or MinGW for consumers)."             ""             "Built by actions-precompiled/llvm tech demo.")"
+          notes="$(printf '%s\n' \
+            "Relocatable LLVM kitchen-sink (${VERSION})." \
+            "" \
+            "Linux: clang + tools-extra + lld + lldb + mlir + polly + bolt + openmp + runtimes." \
+            "Windows: tools + xwin MSVC/UCRT sysroot (no cl.exe or MinGW for consumers)." \
+            "" \
+            "Built by actions-precompiled/llvm tech demo.")"
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "release exists; uploading assets"
           else
