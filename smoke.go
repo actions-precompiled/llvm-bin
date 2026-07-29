@@ -74,10 +74,11 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 		return err
 	}
 	bin := filepath.Join(tmp, "hello")
-	lld := filepath.Join(root, "bin", "lld")
+	// Prefer absolute ld.lld — the multi-call "lld" binary rejects direct -fuse-ld.
+	ldlld := filepath.Join(root, "bin", "ld.lld")
 	args := []string{"-fuse-ld=lld", "-o", bin, hello}
-	if _, err := deps.FS.Stat(lld); err == nil {
-		args = []string{"-fuse-ld=" + lld, "-o", bin, hello}
+	if _, err := deps.FS.Stat(ldlld); err == nil {
+		args = []string{"-fuse-ld=" + ldlld, "-o", bin, hello}
 	}
 	if out, err := foundation.OutputWithEnv(ctx, deps, env, clang, args...); err != nil {
 		return fmt.Errorf("compile hello: %w\n%s", err, out)
