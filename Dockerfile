@@ -1,8 +1,9 @@
-# Native multi-arch LLVM build image (Ubuntu 24.04).
-# Full kitchen-sink compile lives in scripts/build_and_package.sh — this image only holds deps.
+# LLVM build environment only (cmake, ninja, compilers).
+# The package Go binary is bind-mounted as /apc and run as: /apc work
 FROM ubuntu:24.04
 
 ARG TARGETARCH=
+ARG CMAKE_VERSION=3.31.6
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -13,14 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         curl \
         python3 \
-        python3-pip \
         pkg-config \
         patchelf \
         file \
         tar \
         xz-utils \
-        zip \
-        unzip \
         zlib1g-dev \
         libzstd-dev \
         libxml2-dev \
@@ -33,13 +31,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ccache \
     && rm -rf /var/lib/apt/lists/*
 
-# Trunk LLVM wants CMake >= 3.31 (Ubuntu 24.04 ships 3.28).
-ARG CMAKE_VERSION=3.31.6
-RUN set -eux;     arch="$(uname -m)";     case "$arch" in       x86_64)  cmake_arch=x86_64 ;;       aarch64) cmake_arch=aarch64 ;;       *) echo "unsupported arch $arch" >&2; exit 1 ;;     esac;     curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${cmake_arch}.tar.gz"       | tar -xz -C /usr/local --strip-components=1;     cmake --version
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64)  cmake_arch=x86_64 ;; \
+      aarch64) cmake_arch=aarch64 ;; \
+      *) echo "unsupported arch $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${cmake_arch}.tar.gz" \
+      | tar -xz -C /usr/local --strip-components=1; \
+    cmake --version
 
-# Disk is the real constraint on GHA; prefer /tmp for huge trees when mounted.
-WORKDIR /src
-COPY scripts/build_and_package.sh /usr/local/bin/build_and_package.sh
-RUN chmod +x /usr/local/bin/build_and_package.sh
-
-ENTRYPOINT ["/usr/local/bin/build_and_package.sh"]
+WORKDIR /work
+# No ENTRYPOINT — host mounts /apc and runs: /apc work
