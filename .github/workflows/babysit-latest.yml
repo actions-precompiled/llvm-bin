@@ -1,0 +1,32 @@
+# Renamed purpose: smoke the latest missing tag (not main/trunk).
+name: Babysit latest missing
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - name: Dispatch Build for newest missing tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t versions < <(mise exec -- go run . list)
+          if ((${#versions[@]} == 0)); then
+            echo "No missing tags."
+            exit 0
+          fi
+          # list is sorted ascending; take newest
+          v="${versions[-1]}"
+          echo "Dispatching Build for $v"
+          gh workflow run Build -f version="$v" -f publish=false -f recreate=false

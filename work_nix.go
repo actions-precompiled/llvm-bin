@@ -116,11 +116,6 @@ built_at=%s
 	}
 	deps.Logf("Done: %s", archive)
 
-	// alias for trunk
-	if versionRaw == "trunk" || versionRaw == "main" {
-		alias := filepath.Join(req.OutDir, foundation.ArtifactName(meta.Name, "trunk", archiveSuffix))
-		_ = deps.Runner.Run(ctx, "cp", "-a", archive, alias)
-	}
 	return nil
 }
 

@@ -1,7 +1,7 @@
 // Command apc builds the actions-precompiled LLVM distribution.
 //
 //	go run . list
-//	go run . build trunk
+//	go run . build llvmorg-21.1.0
 //	go run . generate workflow --force
 //
 // Linux builds mount this binary into Docker and run: /apc work
@@ -28,7 +28,7 @@ func (llvmPackage) Meta() foundation.Meta {
 		ImageName:       "llvm-buildenv",
 		Binary:          "clang",
 		VersionEnv:      "LLVM_VERSION",
-		Description:     "Relocatable LLVM/Clang kitchen-sink toolchain (tools + runtimes). Tech demo builds from trunk or llvmorg tags.",
+		Description:     "Relocatable LLVM/Clang kitchen-sink toolchain (tools + runtimes). Tech demo: tagged llvmorg-* releases (and explicit tags only).",
 		Homepage:        "https://github.com/llvm/llvm-project",
 		DefaultTargets: []string{
 			foundation.TargetLinuxAMD64,

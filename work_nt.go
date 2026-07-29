@@ -101,11 +101,6 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 		return fmt.Errorf("tar: %w", err)
 	}
 	deps.Logf("Done: %s", archive)
-	if req.Version == "trunk" || req.Version == "main" {
-		alias := filepath.Join(req.OutDir, foundation.ArtifactName(meta.Name, "trunk", archiveSuffix))
-		_ = deps.Runner.Run(ctx, "cp", archive, alias) // might fail on windows without cp - use copy
-		_ = deps.Runner.Run(ctx, "cmd", "/c", "copy", "/Y", archive, alias)
-	}
 	return nil
 }
 
