@@ -38,9 +38,7 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	stage := filepath.Join(work, "stage")
 	prefix := filepath.Join(stage, meta.Name)
 
-	if err := deps.FS.RemoveAll(work); err != nil {
-		deps.Logf("remove %s: %v", work, err)
-	}
+	deps.RemoveAllLog(work, "remove")
 	for _, d := range []string{src, build, prefix, req.OutDir} {
 		if err := deps.FS.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -82,12 +80,8 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	if err := deps.Runner.Run(ctx, "cmake", "--install", build); err != nil {
 		return fmt.Errorf("cmake install: %w", err)
 	}
-	if err := deps.FS.RemoveAll(build); err != nil {
-		deps.Logf("remove %s: %v", build, err)
-	}
-	if err := deps.FS.RemoveAll(src); err != nil {
-		deps.Logf("remove %s: %v", src, err)
-	}
+	deps.RemoveAllLog(build, "remove")
+	deps.RemoveAllLog(src, "remove")
 
 	// optional xwin
 	if deps.Env.Get("SKIP_XWIN") != "1" {

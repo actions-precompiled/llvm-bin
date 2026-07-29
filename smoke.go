@@ -10,12 +10,27 @@ import (
 	"github.com/actions-precompiled/foundation"
 )
 
+// Package-level smoke is a molecule: extract + platform policy on top of
+// foundation atoms (CleanSmokeEnv, OutputWithEnv, CheckLinuxRelocatable, RemoveAllLog).
+
 func smokeLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, req foundation.SmokeRequest) error {
+	return smokeEachTarball(req, func(tb string) error {
+		return smokeLinuxTarball(ctx, deps, meta, tb)
+	})
+}
+
+func smokeWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta, req foundation.SmokeRequest) error {
+	return smokeEachTarball(req, func(tb string) error {
+		return smokeWindowsTarball(ctx, deps, meta, tb)
+	})
+}
+
+func smokeEachTarball(req foundation.SmokeRequest, fn func(tarball string) error) error {
 	if len(req.Tarballs) == 0 {
 		return fmt.Errorf("%w", ErrSmokeNoTarballs)
 	}
 	for _, tb := range req.Tarballs {
-		if err := smokeLinuxTarball(ctx, deps, meta, tb); err != nil {
+		if err := fn(tb); err != nil {
 			return err
 		}
 	}
@@ -28,11 +43,7 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := deps.FS.RemoveAll(tmp); err != nil {
-			deps.Logf("smoke cleanup: %v", err)
-		}
-	}()
+	defer deps.RemoveAllLog(tmp, "smoke cleanup")
 
 	if err := deps.Runner.Run(ctx, "tar", "-xzf", tarball, "-C", tmp); err != nil {
 		return fmt.Errorf("extract: %w", err)
@@ -43,7 +54,6 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 		return fmt.Errorf("missing bin/clang: %w", err)
 	}
 
-	// Self-contained: RPATH/$ORIGIN only. No LD_LIBRARY_PATH, no package PATH.
 	if err := foundation.CheckLinuxRelocatable(root, foundation.RelocatableOpts{
 		RequiredBins: []string{"clang"},
 	}); err != nil {
@@ -52,20 +62,13 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 	deps.Logf("relocatable: RPATH/$ORIGIN OK")
 
 	env := foundation.CleanSmokeEnv(deps.Env.Environ())
-	run := func(name string, args ...string) (string, error) {
-		if rw, ok := deps.Runner.(foundation.RunnerWithOpts); ok {
-			return rw.OutputWith(ctx, foundation.RunOpts{Env: env}, name, args...)
-		}
-		return deps.Runner.Output(ctx, name, args...)
-	}
 
-	if out, err := run(clang, "--version"); err != nil {
+	if out, err := foundation.OutputWithEnv(ctx, deps, env, clang, "--version"); err != nil {
 		return fmt.Errorf("clang --version: %w\n%s", err, out)
 	} else {
 		deps.Logf("%s", firstLines(out, 4))
 	}
 
-	// Compile a tiny C program with the bundled lld (absolute paths only).
 	hello := filepath.Join(tmp, "hello.c")
 	if err := deps.FS.WriteFile(hello, []byte("#include <stdio.h>\nint main(void){puts(\"hi\");return 0;}\n"), 0o644); err != nil {
 		return err
@@ -74,13 +77,12 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 	lld := filepath.Join(root, "bin", "lld")
 	args := []string{"-fuse-ld=lld", "-o", bin, hello}
 	if _, err := deps.FS.Stat(lld); err == nil {
-		// Prefer explicit linker path so we do not need package bin on PATH.
 		args = []string{"-fuse-ld=" + lld, "-o", bin, hello}
 	}
-	if out, err := run(clang, args...); err != nil {
+	if out, err := foundation.OutputWithEnv(ctx, deps, env, clang, args...); err != nil {
 		return fmt.Errorf("compile hello: %w\n%s", err, out)
 	}
-	if out, err := run(bin); err != nil {
+	if out, err := foundation.OutputWithEnv(ctx, deps, env, bin); err != nil {
 		return fmt.Errorf("run hello: %w\n%s", err, out)
 	} else if !strings.Contains(out, "hi") {
 		return fmt.Errorf("%w: %q", ErrHelloOutput, out)
@@ -92,30 +94,18 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 			deps.Logf("WARN missing optional util: %s", util)
 			continue
 		}
-		if out, err := run(p, "--version"); err != nil {
-			if out2, err2 := run(p, "-version"); err2 != nil {
+		out, err := foundation.OutputWithEnv(ctx, deps, env, p, "--version")
+		if err != nil {
+			out2, err2 := foundation.OutputWithEnv(ctx, deps, env, p, "-version")
+			if err2 != nil {
 				return fmt.Errorf("%w (%s): %w", ErrUtilVersion, util, errors.Join(err, err2))
-			} else {
-				deps.Logf("ok %s: %s", util, firstLines(out2, 1))
 			}
-		} else {
-			deps.Logf("ok %s: %s", util, firstLines(out, 1))
+			out = out2
 		}
+		deps.Logf("ok %s: %s", util, firstLines(out, 1))
 	}
 
 	deps.Logf("✓ Smoke test passed: %s", filepath.Base(tarball))
-	return nil
-}
-
-func smokeWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta, req foundation.SmokeRequest) error {
-	if len(req.Tarballs) == 0 {
-		return fmt.Errorf("%w", ErrSmokeNoTarballs)
-	}
-	for _, tb := range req.Tarballs {
-		if err := smokeWindowsTarball(ctx, deps, meta, tb); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -125,11 +115,7 @@ func smokeWindowsTarball(ctx context.Context, deps foundation.Deps, meta foundat
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := deps.FS.RemoveAll(tmp); err != nil {
-			deps.Logf("smoke cleanup: %v", err)
-		}
-	}()
+	defer deps.RemoveAllLog(tmp, "smoke cleanup")
 
 	if err := deps.Runner.Run(ctx, "tar", "-xzf", tarball, "-C", tmp); err != nil {
 		return fmt.Errorf("extract: %w", err)
@@ -143,22 +129,13 @@ func smokeWindowsTarball(ctx context.Context, deps foundation.Deps, meta foundat
 		}
 	}
 
-	// Windows loads DLLs next to the EXE by default. Do not prepend package bin
-	// to PATH unless a required DLL lives outside bin/ (then package should fix layout).
 	env := foundation.CleanSmokeEnv(deps.Env.Environ())
 	sysroot := filepath.Join(root, "xwin")
 	if st, err := deps.FS.Stat(sysroot); err == nil && st.IsDir() {
 		env = setEnvList(env, "APCLLVM_XWIN", sysroot)
 	}
 
-	run := func(name string, args ...string) (string, error) {
-		if rw, ok := deps.Runner.(foundation.RunnerWithOpts); ok {
-			return rw.OutputWith(ctx, foundation.RunOpts{Env: env}, name, args...)
-		}
-		return deps.Runner.Output(ctx, name, args...)
-	}
-
-	if out, err := run(clang, "--version"); err != nil {
+	if out, err := foundation.OutputWithEnv(ctx, deps, env, clang, "--version"); err != nil {
 		return fmt.Errorf("clang --version: %w\n%s", err, out)
 	} else {
 		deps.Logf("%s", firstLines(out, 4))
@@ -181,10 +158,10 @@ func smokeWindowsTarball(ctx context.Context, deps foundation.Deps, meta foundat
 	} else {
 		args = []string{"-fuse-ld=lld", "-o", outExe, hello}
 	}
-	if out, err := run(clang, args...); err != nil {
+	if out, err := foundation.OutputWithEnv(ctx, deps, env, clang, args...); err != nil {
 		return fmt.Errorf("compile hello (windows): %w\n%s", err, out)
 	}
-	if out, err := run(outExe); err != nil {
+	if out, err := foundation.OutputWithEnv(ctx, deps, env, outExe); err != nil {
 		return fmt.Errorf("run hello.exe: %w\n%s", err, out)
 	}
 	deps.Logf("✓ Windows smoke passed: %s", filepath.Base(tarball))

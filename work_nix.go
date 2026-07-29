@@ -34,9 +34,7 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 	stage := filepath.Join(work, "stage")
 	prefix := filepath.Join(stage, meta.Name)
 
-	if err := deps.FS.RemoveAll(work); err != nil {
-		deps.Logf("remove %s: %v", work, err)
-	}
+	deps.RemoveAllLog(work, "remove")
 	for _, d := range []string{src, build, prefix, req.OutDir} {
 		if err := deps.FS.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -93,12 +91,8 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 		return fmt.Errorf("cmake install: %w", err)
 	}
 
-	if err := deps.FS.RemoveAll(build); err != nil {
-		deps.Logf("remove %s: %v", build, err)
-	}
-	if err := deps.FS.RemoveAll(src); err != nil {
-		deps.Logf("remove %s: %v", src, err)
-	}
+	deps.RemoveAllLog(build, "remove")
+	deps.RemoveAllLog(src, "remove")
 
 	if err := ensureClangSymlinks(ctx, deps, prefix); err != nil {
 		return err
@@ -152,16 +146,12 @@ func linuxArchiveSuffix(target string) (string, error) {
 
 func cloneUpstream(ctx context.Context, deps foundation.Deps, upstream, versionRaw, src string) (ref, artifact, sha string, err error) {
 	tryClone := func(branch string) error {
-		if err := deps.FS.RemoveAll(src); err != nil {
-		deps.Logf("remove %s: %v", src, err)
-	}
+		deps.RemoveAllLog(src, "remove")
 		if err := deps.FS.MkdirAll(src, 0o755); err != nil {
 			return err
 		}
 		// git clone into src - need empty or clone creates dir
-		if err := deps.FS.RemoveAll(src); err != nil {
-		deps.Logf("remove %s: %v", src, err)
-	}
+		deps.RemoveAllLog(src, "remove")
 		return deps.Runner.Run(ctx, "git", "clone", "--depth", "1", "--branch", branch, upstream, src)
 	}
 
