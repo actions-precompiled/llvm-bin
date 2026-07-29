@@ -12,7 +12,8 @@ Built with [`actions-precompiled/foundation`](https://github.com/actions-precomp
 | Tools | `clang-format`, `clang-tidy`, `clangd`, clang-tools-extra |
 | LLVM utils | `llvm-ar`, `llvm-objcopy`, `llvm-symbolizer`, `llvm-config`, … |
 | Extra projects | **lldb**, **mlir**, **polly**, **bolt**, **openmp** |
-| Runtimes | **compiler-rt** (sanitizers, profile, fuzzer), **libc++ / libc++abi / libunwind** |
+| Runtimes (Linux) | **compiler-rt**, **libc++ / libc++abi / libunwind**, **openmp** |
+| Runtimes (Windows/MSVC) | **compiler-rt** + **openmp** only (libunwind is Itanium-only) |
 | Backends | `LLVM_TARGETS_TO_BUILD=Native` by default (override for more) |
 
 Windows artifacts additionally try to ship an **[xwin](https://github.com/Jake-Shadle/xwin)** splat of MSVC CRT + SDK under `xwin/`, so **consumers can compile without `cl.exe` or MinGW** (builder still bootstraps with VS on GHA). Redistribution of those bits is subject to Microsoft’s terms.
