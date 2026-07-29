@@ -66,7 +66,7 @@ jobs:
             echo ""
             echo "- Ref: \`$version\`"
             echo "- Publish: **$publish**"
-            echo "- Kitchen sink: clang, tools-extra, lld, lldb, mlir, polly, bolt, openmp + runtimes"
+            echo "- Kitchen sink: clang, tools-extra, lld, lldb, mlir, polly, bolt + runtimes (openmp via RUNTIMES)"
             echo "- Windows: clang+lld + xwin sysroot (no cl/mingw for consumers)"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -118,8 +118,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
-      - name: Install Ninja
-        run: choco install ninja -y
+      - name: Install Ninja + modern CMake
+        run: |
+          choco install ninja cmake --version=3.31.6 -y --no-progress
+          cmake --version
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build (native) + smoke

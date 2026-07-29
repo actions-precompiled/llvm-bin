@@ -9,7 +9,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
-        cmake \
         ninja-build \
         git \
         curl \
@@ -33,6 +32,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         binutils-dev \
         ccache \
     && rm -rf /var/lib/apt/lists/*
+
+# Trunk LLVM wants CMake >= 3.31 (Ubuntu 24.04 ships 3.28).
+ARG CMAKE_VERSION=3.31.6
+RUN set -eux;     arch="$(uname -m)";     case "$arch" in       x86_64)  cmake_arch=x86_64 ;;       aarch64) cmake_arch=aarch64 ;;       *) echo "unsupported arch $arch" >&2; exit 1 ;;     esac;     curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${cmake_arch}.tar.gz"       | tar -xz -C /usr/local --strip-components=1;     cmake --version
 
 # Disk is the real constraint on GHA; prefer /tmp for huge trees when mounted.
 WORKDIR /src

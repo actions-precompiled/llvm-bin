@@ -11,8 +11,8 @@ $Upstream = if ($env:UPSTREAM_REPO) { $env:UPSTREAM_REPO } else { "https://githu
 $PackageName = if ($env:PACKAGE_NAME) { $env:PACKAGE_NAME } else { "llvm" }
 $Jobs = if ($env:JOBS) { [int]$env:JOBS } else { [Environment]::ProcessorCount }
 $LinkJobs = if ($env:LLVM_PARALLEL_LINK_JOBS) { $env:LLVM_PARALLEL_LINK_JOBS } else { "1" }
-$Projects = if ($env:LLVM_ENABLE_PROJECTS) { $env:LLVM_ENABLE_PROJECTS } else { "clang;clang-tools-extra;lld;lldb;mlir;polly;bolt;openmp" }
-$Runtimes = if ($env:LLVM_ENABLE_RUNTIMES) { $env:LLVM_ENABLE_RUNTIMES } else { "compiler-rt;libcxx;libcxxabi;libunwind" }
+$Projects = if ($env:LLVM_ENABLE_PROJECTS) { $env:LLVM_ENABLE_PROJECTS } else { "clang;clang-tools-extra;lld;lldb;mlir;polly;bolt" }
+$Runtimes = if ($env:LLVM_ENABLE_RUNTIMES) { $env:LLVM_ENABLE_RUNTIMES } else { "compiler-rt;libcxx;libcxxabi;libunwind;openmp" }
 $Targets = if ($env:LLVM_TARGETS_TO_BUILD) { $env:LLVM_TARGETS_TO_BUILD } else { "Native" }
 $SkipXwin = $env:SKIP_XWIN -eq "1"
 

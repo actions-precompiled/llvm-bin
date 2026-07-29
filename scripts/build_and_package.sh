@@ -15,8 +15,8 @@ LLVM_PARALLEL_LINK_JOBS="${LLVM_PARALLEL_LINK_JOBS:-2}"
 # Optional: limit targets (default host arch triple family)
 LLVM_TARGETS_TO_BUILD="${LLVM_TARGETS_TO_BUILD:-Native}"
 # Projects: full utility stack (not every experimental backend).
-LLVM_ENABLE_PROJECTS="${LLVM_ENABLE_PROJECTS:-clang;clang-tools-extra;lld;lldb;mlir;polly;bolt;openmp}"
-LLVM_ENABLE_RUNTIMES="${LLVM_ENABLE_RUNTIMES:-compiler-rt;libcxx;libcxxabi;libunwind}"
+LLVM_ENABLE_PROJECTS="${LLVM_ENABLE_PROJECTS:-clang;clang-tools-extra;lld;lldb;mlir;polly;bolt}"
+LLVM_ENABLE_RUNTIMES="${LLVM_ENABLE_RUNTIMES:-compiler-rt;libcxx;libcxxabi;libunwind;openmp}"
 
 case "$BUILD_TARGET" in
   linux-amd64|linux-x86_64) ARCHIVE_SUFFIX="linux-amd64" ;;
