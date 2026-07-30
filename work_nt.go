@@ -74,6 +74,9 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 		"-DLLVM_PARALLEL_LINK_JOBS=" + linkJobs,
 		// Only the host target's compiler-rt; avoid i386 builtins without 32-bit SDK.
 		"-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON",
+		// Relocatable kit: do not link LLDB against host Python DLLs.
+		"-DLLDB_ENABLE_PYTHON=OFF",
+		"-DLLDB_ENABLE_LUA=OFF",
 	}
 	if err := deps.Runner.Run(ctx, "cmake", cmakeArgs...); err != nil {
 		return fmt.Errorf("cmake configure: %w", err)
