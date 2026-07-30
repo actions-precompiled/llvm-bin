@@ -11,7 +11,8 @@ import (
 )
 
 // Package-level smoke is a molecule: extract + platform policy on top of
-// foundation atoms (CleanSmokeEnv, OutputWithEnv, CheckLinuxRelocatable, RemoveAllLog).
+// foundation atoms (CleanSmokeEnv, OutputWithEnv, CheckLinuxRelocatable,
+// SmokeBinDirHelp, RemoveAllLog).
 
 func smokeLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, req foundation.SmokeRequest) error {
 	return smokeEachTarball(req, func(tb string) error {
@@ -54,14 +55,22 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 		return fmt.Errorf("missing bin/clang: %w", err)
 	}
 
-	if err := foundation.CheckLinuxRelocatable(root, foundation.RelocatableOpts{
-		RequiredBins: []string{"clang"},
-	}); err != nil {
+	// All dynamic ELFs: package-private SONAMEs must resolve via $ORIGIN.
+	if err := foundation.CheckLinuxRelocatable(root, foundation.RelocatableOpts{}); err != nil {
 		return err
 	}
 	deps.Logf("relocatable: RPATH/$ORIGIN OK")
 
 	env := foundation.CleanSmokeEnv(deps.Env.Environ())
+
+	// Every bin tool must start under a clean env (--help preferred).
+	// Skip multi-call "lld" (must be invoked as ld.lld / etc.).
+	if err := foundation.SmokeBinDirHelp(ctx, deps, root, foundation.BinHelpOpts{
+		Env:  env,
+		Skip: []string{"lld"},
+	}); err != nil {
+		return err
+	}
 
 	if out, err := foundation.OutputWithEnv(ctx, deps, env, clang, "--version"); err != nil {
 		return fmt.Errorf("clang --version: %w\n%s", err, out)
@@ -74,7 +83,6 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 		return err
 	}
 	bin := filepath.Join(tmp, "hello")
-	// Prefer absolute ld.lld — the multi-call "lld" binary rejects direct -fuse-ld.
 	ldlld := filepath.Join(root, "bin", "ld.lld")
 	args := []string{"-fuse-ld=lld", "-o", bin, hello}
 	if _, err := deps.FS.Stat(ldlld); err == nil {
@@ -87,23 +95,6 @@ func smokeLinuxTarball(ctx context.Context, deps foundation.Deps, meta foundatio
 		return fmt.Errorf("run hello: %w\n%s", err, out)
 	} else if !strings.Contains(out, "hi") {
 		return fmt.Errorf("%w: %q", ErrHelloOutput, out)
-	}
-
-	for _, util := range []string{"clang++", "clang-format", "clang-tidy", "clangd", "ld.lld", "llvm-ar", "llvm-config", "lldb"} {
-		p := filepath.Join(root, "bin", util)
-		if _, err := deps.FS.Stat(p); err != nil {
-			deps.Logf("WARN missing optional util: %s", util)
-			continue
-		}
-		out, err := foundation.OutputWithEnv(ctx, deps, env, p, "--version")
-		if err != nil {
-			out2, err2 := foundation.OutputWithEnv(ctx, deps, env, p, "-version")
-			if err2 != nil {
-				return fmt.Errorf("%w (%s): %w", ErrUtilVersion, util, errors.Join(err, err2))
-			}
-			out = out2
-		}
-		deps.Logf("ok %s: %s", util, firstLines(out, 1))
 	}
 
 	deps.Logf("✓ Smoke test passed: %s", filepath.Base(tarball))
@@ -134,6 +125,13 @@ func smokeWindowsTarball(ctx context.Context, deps foundation.Deps, meta foundat
 	sysroot := filepath.Join(root, "xwin")
 	if st, err := deps.FS.Stat(sysroot); err == nil && st.IsDir() {
 		env = setEnvList(env, "APCLLVM_XWIN", sysroot)
+	}
+
+	if err := foundation.SmokeBinDirHelp(ctx, deps, root, foundation.BinHelpOpts{
+		Env:  env,
+		Skip: []string{"lld.exe", "lld"}, // multi-call
+	}); err != nil {
+		return err
 	}
 
 	if out, err := foundation.OutputWithEnv(ctx, deps, env, clang, "--version"); err != nil {
