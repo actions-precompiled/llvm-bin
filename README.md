@@ -6,7 +6,7 @@ Relocatable **LLVM kitchen-sink** toolchain built with
 **Tagged releases only** — CI plans the latest upstream release tag; publish
 refuses `trunk`/`main`/`latest`.
 
-**Self-contained Linux trees** — post-install `patchelf` sets `$ORIGIN` RPATH; smoke runs with a clean loader env (no `LD_LIBRARY_PATH`, no package `PATH`).
+**Self-contained Linux trees** (static libedit when `.a` available, else vendored `libedit`/`tinfo` into `lib/`) — post-install `patchelf` sets `$ORIGIN` RPATH; smoke runs with a clean loader env (no `LD_LIBRARY_PATH`, no package `PATH`).
 
 ## CLI
 
