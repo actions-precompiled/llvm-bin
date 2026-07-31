@@ -283,11 +283,32 @@ func firstExistingFile(paths ...string) string {
 // installed ELF still DT_NEEDs them (static link failed or other tools need them).
 // Then RPATH/$ORIGIN resolves them without distro packages.
 func embedLinuxHostLibs(ctx context.Context, deps foundation.Deps, prefix string) error {
+	// Third-party libs we ship inside the package (not glibc/libstdc++/libgcc).
+	// Static libedit is preferred when available; anything still DT_NEEDED is copied.
 	wantPrefixes := []string{
 		"libedit.so",
 		"libtinfo.so",
 		"libncurses.so",
 		"libncursesw.so",
+		"libpanel.so",
+		"libpanelw.so",
+		"libform.so",
+		"libformw.so",
+		"libz.so",
+		"libzstd.so",
+		"libxml2.so",
+		"liblzma.so",
+		"libcurl.so",
+		"libssl.so",
+		"libcrypto.so",
+		"libffi.so",
+		"libssh2.so",
+		"libnghttp2.so",
+		"libpsl.so",
+		"libidn2.so",
+		"libunistring.so",
+		"libbrotlidec.so",
+		"libbrotlicommon.so",
 	}
 	libDir := filepath.Join(prefix, "lib")
 	if err := deps.FS.MkdirAll(libDir, 0o755); err != nil {
@@ -318,7 +339,7 @@ func embedLinuxHostLibs(ctx context.Context, deps foundation.Deps, prefix string
 		})
 	}
 	if len(needed) == 0 {
-		deps.Logf("embed: no libedit/ncurses DT_NEEDED (likely static libedit)")
+		deps.Logf("embed: no vendorable third-party DT_NEEDED left")
 		return nil
 	}
 	for soname := range needed {
