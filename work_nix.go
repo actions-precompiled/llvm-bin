@@ -82,13 +82,7 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 		"-DLIBCXXABI_USE_LLVM_UNWINDER=ON",
 		"-DLIBUNWIND_USE_COMPILER_RT=ON",
 	}
-	// Prefer static libedit (+tinfo) so lldb does not DT_NEEDED host libedit.so.
-	if editArgs := staticLibEditCMakeArgs(deps); len(editArgs) > 0 {
-		cmakeArgs = append(cmakeArgs, editArgs...)
-		deps.Logf("cmake: static libedit: %v", editArgs)
-	} else {
-		deps.Logf("cmake: static libedit .a not found; will vendor shared libedit after install")
-	}
+	// libedit: vendor shared libs into prefix/lib after install (static .a breaks libLLVM.so PIC link).
 	if err := deps.Runner.Run(ctx, "cmake", cmakeArgs...); err != nil {
 		return fmt.Errorf("cmake configure: %w", err)
 	}
@@ -232,51 +226,6 @@ func envOr(deps foundation.Deps, key, def string) string {
 		return v
 	}
 	return def
-}
-
-// staticLibEditCMakeArgs points LLDB at static libedit.a + tinfo/ncurses when present.
-func staticLibEditCMakeArgs(deps foundation.Deps) []string {
-	editA := firstExistingFile(
-		"/usr/lib/x86_64-linux-gnu/libedit.a",
-		"/usr/lib/aarch64-linux-gnu/libedit.a",
-		"/usr/lib64/libedit.a",
-		"/usr/lib/libedit.a",
-	)
-	if editA == "" {
-		return nil
-	}
-	// libedit.a typically needs terminfo / ncurses symbols.
-	tinfo := firstExistingFile(
-		filepath.Join(filepath.Dir(editA), "libtinfo.a"),
-		filepath.Join(filepath.Dir(editA), "libncursesw.a"),
-		filepath.Join(filepath.Dir(editA), "libncurses.a"),
-		"/usr/lib/x86_64-linux-gnu/libtinfo.a",
-		"/usr/lib/aarch64-linux-gnu/libtinfo.a",
-		"/usr/lib/x86_64-linux-gnu/libncursesw.a",
-		"/usr/lib/aarch64-linux-gnu/libncursesw.a",
-	)
-	inc := "/usr/include"
-	libs := editA
-	if tinfo != "" {
-		libs = editA + ";" + tinfo
-	}
-	return []string{
-		"-DLibEdit_INCLUDE_DIRS=" + inc,
-		"-DLibEdit_LIBRARIES=" + libs,
-		"-DLLDB_ENABLE_LIBEDIT=ON",
-	}
-}
-
-func firstExistingFile(paths ...string) string {
-	for _, p := range paths {
-		if p == "" {
-			continue
-		}
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			return p
-		}
-	}
-	return ""
 }
 
 // embedLinuxHostLibs copies selected host shared libs into prefix/lib when any
