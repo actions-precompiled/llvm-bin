@@ -9,8 +9,8 @@ import (
 	"github.com/actions-precompiled/foundation"
 )
 
-// Host-side preclone: started during PrepHost (parallel with tool install / image build).
-// Work waits on the result, then configures/builds.
+// Host-side preclone: PrepHost starts clones in goroutines; callers Wait() via
+// WaitGroup before build/docker so install || clone, then build.
 
 type precloneResult struct {
 	Src      string
@@ -20,51 +20,75 @@ type precloneResult struct {
 	Err      error
 }
 
-var precloneMu sync.Mutex
-var precloneWait = map[string]<-chan precloneResult{}
+type precloneEntry struct {
+	wg  sync.WaitGroup
+	res precloneResult
+}
+
+var preclones sync.Map // version → *precloneEntry
 
 func precloneCacheDir(workDir, version string) string {
 	return filepath.Join(workDir, ".cache", "src", foundation.SafePathComponent(version))
 }
 
-// startPreclones kicks off one host git clone per version (if not already started).
+// startPreclones kicks off one host git clone per version (idempotent).
 func startPreclones(ctx context.Context, deps foundation.Deps, meta foundation.Meta, versions []string) {
 	if deps.WorkDir == "" || len(versions) == 0 {
 		return
 	}
 	meta = meta.Normalize()
 	for _, v := range versions {
-		v := v
+		v := strings.TrimSpace(v)
 		if v == "" {
 			continue
 		}
-		precloneMu.Lock()
-		if _, ok := precloneWait[v]; ok {
-			precloneMu.Unlock()
+		if _, loaded := preclones.Load(v); loaded {
 			continue
 		}
-		ch := make(chan precloneResult, 1)
-		precloneWait[v] = ch
-		precloneMu.Unlock()
-
+		e := &precloneEntry{}
+		if _, loaded := preclones.LoadOrStore(v, e); loaded {
+			continue
+		}
+		e.wg.Add(1)
 		src := precloneCacheDir(deps.WorkDir, v)
 		deps.Logf("preclone: starting %s → %s", v, src)
-		go func() {
-			ref, art, sha, err := cloneUpstream(ctx, deps, meta.UpstreamGit, v, src)
+		go func(version, src string, e *precloneEntry) {
+			defer e.wg.Done()
+			ref, art, sha, err := cloneUpstream(ctx, deps, meta.UpstreamGit, version, src)
 			if err != nil {
-				deps.Logf("preclone: %s failed: %v", v, err)
-				ch <- precloneResult{Err: err}
+				deps.Logf("preclone: %s failed: %v", version, err)
+				e.res = precloneResult{Err: err}
 				return
 			}
-			deps.Logf("preclone: %s ready ref=%s sha=%s", v, ref, sha)
-			ch <- precloneResult{Src: src, Ref: ref, Artifact: art, SHA: sha}
-		}()
+			deps.Logf("preclone: %s ready ref=%s sha=%s", version, ref, sha)
+			e.res = precloneResult{Src: src, Ref: ref, Artifact: art, SHA: sha}
+		}(v, src, e)
 	}
 }
 
-// resolveSource waits for a PrepHost preclone when present; otherwise clones into fallbackSrc.
+// WaitPrefetch blocks until PrepHost preclone for version finishes (if any).
+// Implements optional foundation hook so the host waits before docker mount.
+func (llvmPackage) WaitPrefetch(ctx context.Context, version string) error {
+	_ = ctx
+	e, ok := loadPreclone(version)
+	if !ok {
+		return nil
+	}
+	e.wg.Wait()
+	return e.res.Err
+}
+
+func loadPreclone(version string) (*precloneEntry, bool) {
+	v, ok := preclones.Load(version)
+	if !ok {
+		return nil, false
+	}
+	return v.(*precloneEntry), true
+}
+
+// resolveSource waits for PrepHost preclone when present; otherwise clones into fallbackSrc.
 func resolveSource(ctx context.Context, deps foundation.Deps, meta foundation.Meta, version, fallbackSrc string) (src, ref, artifact, sha string, err error) {
-	// Container: host preclone mounted at APC_PREBUILT_SRC.
+	// Container: host preclone already waited on host; mounted at APC_PREBUILT_SRC.
 	if pre := deps.Env.Get("APC_PREBUILT_SRC"); pre != "" {
 		if st, e := deps.FS.Stat(pre); e == nil && st.IsDir() {
 			ref, artifact, sha, err = gitIdentity(ctx, deps, pre, version)
@@ -76,26 +100,15 @@ func resolveSource(ctx context.Context, deps foundation.Deps, meta foundation.Me
 		}
 	}
 
-	precloneMu.Lock()
-	ch := precloneWait[version]
-	precloneMu.Unlock()
-	if ch != nil {
+	if e, ok := loadPreclone(version); ok {
 		deps.Logf("source: waiting for preclone %s", version)
-		res := <-ch
-		// Re-arm a closed wait? single-use channel with buffer 1 — only one waiter.
-		// If multiple targets share version, re-store completed result for others.
-		precloneMu.Lock()
-		done := make(chan precloneResult, 1)
-		done <- res
-		precloneWait[version] = done
-		precloneMu.Unlock()
-		if res.Err != nil {
-			return "", "", "", "", res.Err
+		e.wg.Wait()
+		if e.res.Err != nil {
+			return "", "", "", "", e.res.Err
 		}
-		return res.Src, res.Ref, res.Artifact, res.SHA, nil
+		return e.res.Src, e.res.Ref, e.res.Artifact, e.res.SHA, nil
 	}
 
-	// No preclone — clone now into fallbackSrc.
 	ref, artifact, sha, err = cloneUpstream(ctx, deps, meta.UpstreamGit, version, fallbackSrc)
 	return fallbackSrc, ref, artifact, sha, err
 }
@@ -105,26 +118,23 @@ func gitIdentity(ctx context.Context, deps foundation.Deps, src, versionRaw stri
 	if err != nil {
 		return "", "", "", err
 	}
-	sha = trimSpace(out)
+	sha = strings.TrimSpace(out)
 	out, err = deps.Runner.Output(ctx, "git", "-C", src, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		ref = versionRaw
 	} else {
-		ref = trimSpace(out)
+		ref = strings.TrimSpace(out)
 		if ref == "HEAD" {
 			ref = versionRaw
 		}
 	}
-	if versionRaw == "trunk" || versionRaw == "main" || hasPrefix(versionRaw, "trunk-") {
+	switch {
+	case versionRaw == "trunk" || versionRaw == "main" || strings.HasPrefix(versionRaw, "trunk-"):
 		artifact = "trunk-" + sha
-	} else if hasPrefix(versionRaw, "llvmorg-") {
+	case strings.HasPrefix(versionRaw, "llvmorg-"):
 		artifact = versionRaw
-	} else {
+	default:
 		artifact = foundation.VersionBare(versionRaw)
 	}
 	return ref, artifact, sha, nil
 }
-
-func trimSpace(s string) string { return strings.TrimSpace(s) }
-
-func hasPrefix(s, p string) bool { return strings.HasPrefix(s, p) }

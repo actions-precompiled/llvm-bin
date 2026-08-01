@@ -2,7 +2,7 @@ module github.com/actions-precompiled/llvm
 
 go 1.26.5
 
-require github.com/actions-precompiled/foundation v0.0.0-20260801005349-0963fdff54eb
+require github.com/actions-precompiled/foundation v0.0.0-20260801005841-2724b0cc947e
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
