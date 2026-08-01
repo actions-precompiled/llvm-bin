@@ -35,18 +35,20 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 	stage := filepath.Join(work, "stage")
 	prefix := filepath.Join(stage, meta.Name)
 
-	deps.RemoveAllLog(work, "remove")
-	for _, d := range []string{src, build, prefix, req.OutDir} {
+	// Wipe build tree but keep host preclone outside work/ when used.
+	deps.RemoveAllLog(build, "remove")
+	deps.RemoveAllLog(stage, "remove")
+	for _, d := range []string{build, prefix, req.OutDir} {
 		if err := deps.FS.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
 	}
 
-	ref, artifactVersion, sha, err := cloneUpstream(ctx, deps, meta.UpstreamGit, versionRaw, src)
+	src, ref, artifactVersion, sha, err := resolveSource(ctx, deps, meta, versionRaw, src)
 	if err != nil {
 		return err
 	}
-	deps.Logf("Resolved ref=%s sha=%s artifact=%s", ref, sha, artifactVersion)
+	deps.Logf("Resolved ref=%s sha=%s artifact=%s src=%s", ref, sha, artifactVersion, src)
 
 	cmakeArgs := []string{
 		"-G", "Ninja",
@@ -94,7 +96,10 @@ func workLinux(ctx context.Context, deps foundation.Deps, meta foundation.Meta, 
 	}
 
 	deps.RemoveAllLog(build, "remove")
-	deps.RemoveAllLog(src, "remove")
+	// Keep APC_PREBUILT_SRC / host cache; only drop ephemeral in-tree clone.
+	if deps.Env.Get("APC_PREBUILT_SRC") == "" && !isUnderCache(src) {
+		deps.RemoveAllLog(src, "remove")
+	}
 
 	// Ship libedit (and friends) inside the package when still dynamically linked.
 	if err := embedLinuxHostLibs(ctx, deps, prefix); err != nil {
@@ -366,4 +371,9 @@ func resolveHostLib(ctx context.Context, deps foundation.Deps, soname string) (s
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+}
+
+func isUnderCache(src string) bool {
+	s := filepath.ToSlash(src)
+	return strings.Contains(s, "/.cache/src/") || s == "/src" || strings.HasPrefix(s, "/src/")
 }

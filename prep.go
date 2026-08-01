@@ -15,6 +15,9 @@ import (
 //   - synchronous: install / ensure tools required before Work
 //   - asynchronous: best-effort disk free (must not block image/build)
 func (llvmPackage) PrepHost(ctx context.Context, deps foundation.Deps, cfg foundation.Config) error {
+	// Start host git clones immediately (parallel with tool install + docker image build).
+	startPreclones(ctx, deps, llvmPackage{}.Meta(), cfg.Versions)
+
 	switch runtime.GOOS {
 	case "windows":
 		return prepWindowsHost(ctx, deps)

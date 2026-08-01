@@ -40,18 +40,21 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	stage := filepath.Join(work, "stage")
 	prefix := filepath.Join(stage, meta.Name)
 
-	deps.RemoveAllLog(work, "remove")
-	for _, d := range []string{src, build, prefix, req.OutDir} {
+	// Parallel-friendly: preclone may already be filling .cache/src; don't wipe that.
+	deps.RemoveAllLog(build, "remove")
+	deps.RemoveAllLog(stage, "remove")
+	for _, d := range []string{build, prefix, req.OutDir} {
 		if err := deps.FS.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
 	}
 
-	ref, artifactVersion, sha, err := cloneUpstream(ctx, deps, meta.UpstreamGit, req.Version, src)
+	// Clone (or wait for PrepHost preclone) overlaps with choco install when preclone started early.
+	src, ref, artifactVersion, sha, err := resolveSource(ctx, deps, meta, req.Version, src)
 	if err != nil {
 		return err
 	}
-	deps.Logf("Resolved ref=%s sha=%s artifact=%s", ref, sha, artifactVersion)
+	deps.Logf("Resolved ref=%s sha=%s artifact=%s src=%s", ref, sha, artifactVersion, src)
 
 	cmakeArgs := []string{
 		"-G", "Ninja",
@@ -92,7 +95,9 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 		return fmt.Errorf("cmake install: %w", err)
 	}
 	deps.RemoveAllLog(build, "remove")
-	deps.RemoveAllLog(src, "remove")
+	if !isUnderCache(src) {
+		deps.RemoveAllLog(src, "remove")
+	}
 
 	// optional xwin
 	if deps.Env.Get("SKIP_XWIN") != "1" {
