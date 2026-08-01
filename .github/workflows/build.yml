@@ -64,7 +64,7 @@ jobs:
           - target: windows-amd64
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 360
+    # No timeout-minutes: GHA hosted runners hard-cap jobs at 6h anyway.
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2

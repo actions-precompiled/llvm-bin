@@ -20,11 +20,11 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 	}
 
 	archiveSuffix := req.Target
-	projects := envOr(deps, "LLVM_ENABLE_PROJECTS", "clang;clang-tools-extra;lld;lldb;mlir;polly;bolt")
+	projects := envOr(deps, "LLVM_ENABLE_PROJECTS", "clang;clang-tools-extra;lld;lldb;mlir;polly")
 	// MSVC: no libunwind/libc++
 	runtimes := envOr(deps, "LLVM_ENABLE_RUNTIMES", "compiler-rt;openmp")
 	targets := envOr(deps, "LLVM_TARGETS_TO_BUILD", "Native")
-	linkJobs := envOr(deps, "LLVM_PARALLEL_LINK_JOBS", "1")
+	linkJobs := envOr(deps, "LLVM_PARALLEL_LINK_JOBS", "2")
 	jobs := envOr(deps, "JOBS", strconv.Itoa(runtime.NumCPU()))
 
 	tmp := deps.Env.Get("TEMP")
@@ -78,6 +78,10 @@ func workWindows(ctx context.Context, deps foundation.Deps, meta foundation.Meta
 		"-DLLDB_ENABLE_PYTHON=OFF",
 		"-DLLDB_ENABLE_LUA=OFF",
 	}
+	if _, err := deps.Runner.Output(ctx, "where", "ccache"); err == nil {
+		cmakeArgs = append(cmakeArgs, "-DLLVM_CCACHE_BUILD=ON")
+	}
+
 	if err := deps.Runner.Run(ctx, "cmake", cmakeArgs...); err != nil {
 		return fmt.Errorf("cmake configure: %w", err)
 	}
